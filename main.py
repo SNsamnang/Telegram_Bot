@@ -1,13 +1,13 @@
-import yt_dlp
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, InputFile
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
+from telegram import InputFile
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, CallbackContext, filters
+from telegram.update import Update  # Correct import of Update class
 from io import BytesIO
 from urllib.parse import urlparse, urlunparse, parse_qs, urlencode
 import os
 
 TELEGRAM_BOT_TOKEN = '8029641070:AAEdToybM_DN461eBtANHamSukgRvKsC-T0'
 MAX_TELEGRAM_FILE_SIZE = 50 * 1024 * 1024  # 50 MB limit
-ABA_QRCODE_PATH = 'qrcode.png'  # Adjust the path to your QR code image on PythonAnywhere
+ABA_QRCODE_PATH = 'qrcode.png'
 
 # Sanitize YouTube URL
 def sanitize_youtube_url(url):
@@ -21,18 +21,6 @@ def sanitize_youtube_url(url):
         return sanitized_url
     else:
         return None
-
-# Sanitize Facebook URL
-def sanitize_facebook_url(url):
-    url = url.strip()
-    parsed_url = urlparse(url)
-    query_params = parse_qs(parsed_url.query)
-    if 'm.facebook.com' in parsed_url.netloc or 'fb.watch' in parsed_url.netloc or 'l.facebook.com' in parsed_url.netloc:
-        parsed_url = parsed_url._replace(netloc='www.facebook.com', path='/watch')
-    for param in ['fbclid', 'ref', 'tracking_id']:
-        query_params.pop(param, None)
-    sanitized_url = urlunparse(parsed_url._replace(query=urlencode(query_params, doseq=True)))
-    return sanitized_url
 
 # Download YouTube video
 def download_youtube_video(video_url):
@@ -58,29 +46,8 @@ def download_youtube_video(video_url):
     except Exception as e:
         return None, f"Error downloading video: {e}"
 
-# Download Facebook video
-def download_facebook_video(video_url):
-    video_url = sanitize_facebook_url(video_url)
-    if not video_url:
-        return None, "Unsupported URL: Please ensure it's a valid Facebook video link."
-    options = {'format': 'best', 'quiet': True}
-    try:
-        video_data = BytesIO()
-        with yt_dlp.YoutubeDL(options) as ydl:
-            info = ydl.extract_info(video_url, download=False)
-            video_title = info.get('title', 'video')
-            temp_filename = ydl.prepare_filename(info)
-            ydl.download([video_url])
-            with open(temp_filename, 'rb') as f:
-                video_data.write(f.read())
-            video_data.seek(0)
-            os.remove(temp_filename)
-        return video_data, f"{video_title}.mp4"
-    except Exception as e:
-        return None, f"Error downloading video: {e}"
-
 # Start command handler
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start(update: Update, context: CallbackContext):
     keyboard = [
         [
             InlineKeyboardButton("YouTube", callback_data='youtube'),
@@ -95,7 +62,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # Callback handler for button selection
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def button_handler(update: Update, context: CallbackContext):
     query = update.callback_query
     await query.answer()
 
@@ -111,7 +78,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(f"You selected {platform.capitalize()}. Now, please send the video link.")
 
 # Handler for receiving video URLs
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_message(update: Update, context: CallbackContext):
     if 'platform' not in context.user_data:
         await update.message.reply_text("Please select a platform first by using /start.")
         return
@@ -121,8 +88,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if platform == "youtube":
         video_data, response = download_youtube_video(video_url)
-    elif platform == "facebook":
-        video_data, response = download_facebook_video(video_url)
     else:
         await update.message.reply_text("Please specify a valid platform by using /start.")
         return
@@ -138,7 +103,7 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button_handler))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    application.run_polling()
 
 if __name__ == "__main__":
     main()
